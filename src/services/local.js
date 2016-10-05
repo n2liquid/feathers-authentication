@@ -57,21 +57,43 @@ export class Service {
       })
       .then(user => {
         const crypto = this.options.bcrypt || bcrypt;
-        // Check password
-        const hash = user[this.options.passwordField];
 
-        if (!hash) {
-          return done(new Error(`User record in the database is missing a '${this.options.passwordField}'`));
+        let passwordFields = this.options.passwordField;
+
+        if (!Array.isArray(passwordFields)) {
+          passwordFields = [passwordFields];
         }
 
-        crypto.compare(password, hash, function(error, result) {
-          // Handle 500 server error.
-          if (error) {
-            return done(error);
+        (function tryNextPasswordField() {
+          const passwordField = passwordFields.shift();
+
+          if (!passwordField) {
+            // Bad password: No more fields to try.
+            return done(null, false);
           }
 
-          return done(null, result ? user : false);
-        });
+          // Check password.
+          const hash = user[passwordField];
+
+          if (!hash) {
+            return done(new Error(`User record in the database is missing a '${passwordField}'`));
+          }
+
+          crypto.compare(password, hash, function(error, result) {
+            // Handle 500 server error.
+            if (error) {
+              return done(error);
+            }
+
+            if (!result) {
+              // Bad password for current field: Try next one.
+              return tryNextPasswordField();
+            }
+
+            // Good password.
+            return done(null, user);
+          });
+        })();
       })
       .catch(done);
   }
